@@ -1,0 +1,72 @@
+from dataclasses import dataclass, field
+import heapq
+import itertools
+from typing import List
+
+BUY = 1
+SELL = -1
+
+_id_counter = itertools.count()
+
+@dataclass(order=True)
+class Order:
+    # heap uses the first fields for ordering
+    price: float 
+    time: int
+    side: int = field(compare=False)
+    qty: int = field(compare=False)
+
+    @staticmethod
+    def limit(side: int, price: float, qty: int) -> "Order":
+        oid = next(_id_counter)
+        return Order(time=oid, side=side, price=price, qty=qty)
+
+
+class OrderBook:
+    def __init__(self):
+        self.bids: List[Order] = []  # max-heap sorted by price, then time (requires Python 3.14+)
+        self.asks: List[Order] = []  # min-heap sorted by price, then time
+
+    def add_limit_order(self, order: Order) -> None:
+        if order.side == BUY:
+            while True:
+                best_ask = self.best_ask()
+                if (best_ask is None) or (order.price < best_ask.price) or (order.qty == 0):
+                    break
+
+                units_exchanged = min(order.qty, best_ask.qty)
+
+                order.qty -= units_exchanged
+                best_ask.qty -= units_exchanged
+
+                if best_ask.qty == 0:
+                    heapq.heappop(self.asks)
+
+            if order.qty > 0:
+                heapq.heappush_max(self.bids, order)
+            
+        elif order.side == SELL:
+            while True:
+                best_bid = self.best_bid()
+                if (best_bid is None) or (order.price > best_bid.price) or (order.qty == 0):
+                    break
+
+                units_exchanged = min(order.qty, best_bid.qty)
+
+                order.qty -= units_exchanged
+                best_bid.qty -= units_exchanged
+
+                if best_bid.qty == 0:
+                    heapq.heappop_max(self.bids)
+
+            if order.qty > 0:
+                heapq.heappush(self.asks, order)
+        else:
+            raise ValueError("Invalid side")
+
+    def best_bid(self):
+        return self.bids[0] if self.bids else None
+
+    def best_ask(self):
+        return self.asks[0] if self.asks else None
+    

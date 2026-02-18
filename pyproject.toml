@@ -1,0 +1,5 @@
+[project]
+name = "limit-order-book"
+version = "0.1.0"
+description = "Event-driven limit order book simulation"
+requires-python = ">=3.14"
