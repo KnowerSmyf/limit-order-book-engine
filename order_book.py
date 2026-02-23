@@ -43,8 +43,10 @@ class OrderBook:
     def __init__(self):
         self.bids: List[Order] = []  # max-heap sorted by price, then time (requires Python 3.14+)
         self.asks: List[Order] = []  # min-heap sorted by price, then time
-
-    def add_limit_order(self, order: Order) -> None:
+        self._trade_seq = itertools.count()
+        
+    def add_limit_order(self, order: Order) -> List[Trade]:
+        trades: List[Trade] = []
         if order.side == BUY:
             while True:
                 best_ask = self.best_ask()
@@ -55,6 +57,14 @@ class OrderBook:
 
                 order.qty -= units_exchanged
                 best_ask.qty -= units_exchanged
+                trades.append(
+                    Trade(
+                        price=best_ask.price, 
+                        seq=next(self._trade_seq),
+                        aggressor_side=order.side,
+                        qty=units_exchanged
+                    )
+                )
 
                 if best_ask.qty == 0:
                     heapq.heappop(self.asks)
@@ -72,6 +82,15 @@ class OrderBook:
 
                 order.qty -= units_exchanged
                 best_bid.qty -= units_exchanged
+                trades.append(
+                    Trade(
+                        price=best_bid.price, 
+                        seq=next(self._trade_seq),
+                        aggressor_side=order.side,
+                        qty=units_exchanged
+                    )
+                )
+
 
                 if best_bid.qty == 0:
                     heapq.heappop_max(self.bids)
@@ -80,6 +99,8 @@ class OrderBook:
                 heapq.heappush(self.asks, order)
         else:
             raise ValueError("Invalid side")
+        
+        return trades
 
     def best_bid(self):
         return self.bids[0] if self.bids else None
