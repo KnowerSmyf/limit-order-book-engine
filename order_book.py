@@ -10,6 +10,13 @@ _id_counter = itertools.count()
 
 @dataclass(order=True)
 class Order:
+    """
+    Represents a limit order submitted to the exchange.
+
+    An Order expresses unilateral intent to transact at a specified
+    price and quantity. Orders may rest in the book, be partially filled,
+    fully executed, or cancelled.
+    """
     # heap uses the first fields for ordering
     price: float 
     time: int
@@ -49,7 +56,7 @@ class OrderBook:
         trades: List[Trade] = []
         if order.side == BUY:
             while True:
-                best_ask = self.best_ask()
+                best_ask = self._best_ask()
                 if (best_ask is None) or (order.price < best_ask.price) or (order.qty == 0):
                     break
 
@@ -74,7 +81,7 @@ class OrderBook:
             
         elif order.side == SELL:
             while True:
-                best_bid = self.best_bid()
+                best_bid = self._best_bid()
                 if (best_bid is None) or (order.price > best_bid.price) or (order.qty == 0):
                     break
 
@@ -102,9 +109,9 @@ class OrderBook:
         
         return trades
 
-    def best_bid(self):
+    def _best_bid(self):
         return self.bids[0] if self.bids else None
 
-    def best_ask(self):
+    def _best_ask(self):
         return self.asks[0] if self.asks else None
     
