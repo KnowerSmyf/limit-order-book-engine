@@ -22,6 +22,23 @@ class Order:
         return Order(time=oid, side=side, price=price, qty=qty)
 
 
+@dataclass(frozen=True)
+class Trade:
+    """
+    Represents an executed transaction between two counterparties.
+
+    Unlike an Order (which expresses unilateral intent to buy or sell),
+    a Trade is a bilateral event produced by the matching engine when
+    an incoming order interacts with resting liquidity.
+
+    Trades are immutable and represent historical fact.
+    """
+    price: float 
+    seq: int
+    aggressor_side: int
+    qty: int
+
+
 class OrderBook:
     def __init__(self):
         self.bids: List[Order] = []  # max-heap sorted by price, then time (requires Python 3.14+)
