@@ -9,12 +9,10 @@ class Side(Enum):
     SELL = "SELL"
 
 
-@dataclass(order=True)
+@dataclass
 class RestingOrder:
-    # heap uses the first fields for ordering
     price: float 
-    heap_time: int                      # used for ordering
-    time: int = field(compare=False)    # original
+    time: int = field(compare=False)
     side: Side = field(compare=False)
     qty: int = field(compare=False)
     order_id: int = field(compare=False)
@@ -62,24 +60,26 @@ class Trade:
 
 class OrderBook:
     def __init__(self):
-        self.bids: List[RestingOrder] = []      # max-heap sorted by price, then time (requires Python 3.14+)
-        self.asks: List[RestingOrder] = []      # min-heap sorted by price, then time
+        # Resting bids and asks are stored as (priority_key, order_object) items in min-heaps
+        self.bids: List[Tuple[Tuple[float, int], RestingOrder]] = []
+        self.asks: List[Tuple[Tuple[float, int], RestingOrder]] = []
+
         self.active_orders: Set[int] = set()    # Tracks which orders are active. Used for lazy-cancellation of heap items
         self._trade_seq = itertools.count()
         self._time_seq = itertools.count()
 
     def _best_bid(self):
         while self.bids:
-            top = self.bids[0]
+            _, top = self.bids[0]
             if top.order_id in self.active_orders:
                 return top
             # cancelled
-            heapq.heappop_max(self.bids)
+            heapq.heappop(self.bids)
         return None
 
     def _best_ask(self):
         while self.asks:
-            top = self.asks[0]
+            _, top = self.asks[0]
             if top.order_id in self.active_orders:
                 return top
             # cancelled
@@ -103,20 +103,24 @@ class OrderBook:
     
     def _rest(self, *, side: Side, price: float, qty: int, order_id: int) -> None:
         t = next(self._time_seq)
-        heap_time = -t if side is Side.BUY else t # to preserve price-time priority in the max-heap
         ro = RestingOrder(
             price=price,
             time=t,
-            heap_time=heap_time,
             side=side,
             qty=qty,
             order_id=order_id,
         )
+
+        # Bid priority is reverse ordered (i.e., larger bids = better)
         if side is Side.BUY:
-            heapq.heappush_max(self.bids, ro)
+            key = (-price, t)
+            heapq.heappush(self.bids, (key, ro))
         else:
-            heapq.heappush(self.asks, ro)
+            key = (price, t)
+            heapq.heappush(self.asks, (key, ro))
+
         self.active_orders.add(order_id)
+
 
     def _cancel_order(self, ev: Cancel) -> None:
         self.active_orders.discard(ev.order_id)
@@ -163,7 +167,7 @@ class OrderBook:
 
                 # Bid is filled, remove from order book
                 if best_bid.qty == 0:
-                    heapq.heappop_max(self.bids)
+                    heapq.heappop(self.bids)
                     self.active_orders.discard(best_bid.order_id)
 
         else:
@@ -231,7 +235,7 @@ class OrderBook:
 
                 # Bid is filled, remove it from the order book
                 if best_bid.qty == 0:
-                    heapq.heappop_max(self.bids)
+                    heapq.heappop(self.bids)
                     self.active_orders.discard(best_bid.order_id)
         else:
             raise ValueError("Invalid side")
@@ -247,4 +251,5 @@ class OrderBook:
         elif isinstance(ev, Cancel):
             self._cancel_order(ev)
             return []
-    
+        else:
+            raise TypeError(f"Unknown event: {type(ev)!r}") 
