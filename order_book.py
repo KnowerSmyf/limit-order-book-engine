@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import heapq
 import itertools
-from typing import List
+from typing import List, Set
 from enum import Enum
 
 class Side(Enum):
@@ -24,13 +24,19 @@ class Order:
     time: int
     side: Side = field(compare=False)
     qty: int = field(compare=False)
+    order_id: int = field(compare=False)
 
     @staticmethod
-    def limit(side: Side, price: float, qty: int) -> "Order":
+    def limit(side: Side, price: float, qty: int, order_id: int) -> "Order":
         oid = next(_id_counter)
-        return Order(time=oid, side=side, price=price, qty=qty)
+        return Order(time=oid, side=side, price=price, qty=qty, order_id=order_id)
 
 
+@dataclass(frozen=True)
+class Cancel:
+    order_id: int
+
+    
 @dataclass(frozen=True)
 class Trade:
     """
@@ -52,6 +58,7 @@ class OrderBook:
     def __init__(self):
         self.bids: List[Order] = []  # max-heap sorted by price, then time (requires Python 3.14+)
         self.asks: List[Order] = []  # min-heap sorted by price, then time
+        self.active_orders: Set[int] = set()    # Tracks which orders are active. Used for lazy-cancellation of heap items
         self._trade_seq = itertools.count()
         
     def add_limit_order(self, order: Order) -> List[Trade]:
@@ -74,14 +81,15 @@ class OrderBook:
                         qty=units_exchanged
                     )
                 )
-
+                # Ask is filled, remove it from the order book
                 if best_ask.qty == 0:
                     heapq.heappop(self.asks)
+                    self.active_orders.discard(best_ask.order_id)
 
             if order.qty > 0:
                 heapq.heappush_max(self.bids, order)
             
-        elif order.side == SELL:
+        elif order.side is Side.SELL:
             while True:
                 best_bid = self._best_bid()
                 if (best_bid is None) or (order.price > best_bid.price) or (order.qty == 0):
@@ -99,10 +107,10 @@ class OrderBook:
                         qty=units_exchanged
                     )
                 )
-
-
+                # Bid is filled, remove it from the order book
                 if best_bid.qty == 0:
                     heapq.heappop_max(self.bids)
+                    self.active_orders.discard(best_bid.order_id)
 
             if order.qty > 0:
                 heapq.heappush(self.asks, order)
@@ -111,9 +119,23 @@ class OrderBook:
         
         return trades
 
+    def _cancel_order(self, ev: Cancel) -> None:
+        self.active_orders.discard(ev.order_id)
+
     def _best_bid(self):
-        return self.bids[0] if self.bids else None
+        while self.bids:
+            top = self.bids[0]
+            if top.order_id in self.active_orders:
+                return top
+            # cancelled
+            heapq.heappop_max(self.bids)
+        return None
 
     def _best_ask(self):
-        return self.asks[0] if self.asks else None
-    
+        while self.asks:
+            top = self.asks[0]
+            if top.order_id in self.active_orders:
+                return top
+            # cancelled
+            heapq.heappop(self.asks)
+        return None
