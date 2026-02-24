@@ -2,9 +2,11 @@ from dataclasses import dataclass, field
 import heapq
 import itertools
 from typing import List
+from enum import Enum
 
-BUY = 1
-SELL = -1
+class Side(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
 
 _id_counter = itertools.count()
 
@@ -20,11 +22,11 @@ class Order:
     # heap uses the first fields for ordering
     price: float 
     time: int
-    side: int = field(compare=False)
+    side: Side = field(compare=False)
     qty: int = field(compare=False)
 
     @staticmethod
-    def limit(side: int, price: float, qty: int) -> "Order":
+    def limit(side: Side, price: float, qty: int) -> "Order":
         oid = next(_id_counter)
         return Order(time=oid, side=side, price=price, qty=qty)
 
@@ -42,7 +44,7 @@ class Trade:
     """
     price: float 
     seq: int
-    aggressor_side: int
+    aggressor_side: Side
     qty: int
 
 
@@ -54,7 +56,7 @@ class OrderBook:
         
     def add_limit_order(self, order: Order) -> List[Trade]:
         trades: List[Trade] = []
-        if order.side == BUY:
+        if order.side is Side.BUY:
             while True:
                 best_ask = self._best_ask()
                 if (best_ask is None) or (order.price < best_ask.price) or (order.qty == 0):
