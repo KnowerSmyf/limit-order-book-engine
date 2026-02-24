@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import heapq
 import itertools
-from typing import List, Set
+from typing import List, Set, Tuple, Union
 from enum import Enum
 
 class Side(Enum):
@@ -40,6 +40,9 @@ class Cancel:
     order_id: int
 
     
+InboundEvent = Union[NewLimit, NewMarket, Cancel]
+
+
 @dataclass(frozen=True)
 class Trade:
     """
@@ -234,3 +237,14 @@ class OrderBook:
             raise ValueError("Invalid side")
 
         return trades
+
+
+    def process_event(self, ev: InboundEvent) -> List[Trade] | bool: # <- dunno if the use of the pipe here is correct
+        if isinstance(ev, NewLimit):
+            return self._process_limit_order(ev)
+        elif isinstance(ev, NewMarket):
+            return self._process_market_order(ev)
+        elif isinstance(ev, Cancel):
+            self._cancel_order(ev)
+            return []
+    
