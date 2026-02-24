@@ -127,7 +127,7 @@ class OrderBook:
         if limit_order.side is Side.BUY:
             while True:
                 best_ask = self._best_ask()
-                if (best_ask is None) or (limit_order.price < best_ask.price) or (limit_order.qty == 0):
+                if (best_ask is None) or (limit_order.price < best_ask.price) or (order_qty == 0):
                     break
 
                 # Execute the trade at best market prices
@@ -148,7 +148,7 @@ class OrderBook:
         elif limit_order.side is Side.SELL:
             while True:
                 best_bid = self._best_bid()
-                if (best_bid is None) or (limit_order.price > best_bid.price) or (limit_order.qty == 0):
+                if (best_bid is None) or (limit_order.price > best_bid.price) or (order_qty == 0):
                     break
 
                 # Execute the trade at best market prices
@@ -239,7 +239,7 @@ class OrderBook:
         return trades
 
 
-    def process_event(self, ev: InboundEvent) -> List[Trade] | bool: # <- dunno if the use of the pipe here is correct
+    def process_event(self, ev: InboundEvent) -> List[Trade]:
         if isinstance(ev, NewLimit):
             return self._process_limit_order(ev)
         elif isinstance(ev, NewMarket):
