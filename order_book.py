@@ -8,28 +8,31 @@ class Side(Enum):
     BUY = "BUY"
     SELL = "SELL"
 
-_id_counter = itertools.count()
 
 @dataclass(order=True)
-class Order:
-    """
-    Represents a limit order submitted to the exchange.
-
-    An Order expresses unilateral intent to transact at a specified
-    price and quantity. Orders may rest in the book, be partially filled,
-    fully executed, or cancelled.
-    """
+class RestingOrder:
     # heap uses the first fields for ordering
     price: float 
-    time: int
+    heap_time: int                      # used for ordering
+    time: int = field(compare=False)    # original
     side: Side = field(compare=False)
     qty: int = field(compare=False)
     order_id: int = field(compare=False)
 
-    @staticmethod
-    def limit(side: Side, price: float, qty: int, order_id: int) -> "Order":
-        oid = next(_id_counter)
-        return Order(time=oid, side=side, price=price, qty=qty, order_id=order_id)
+
+@dataclass(frozen=True)
+class NewLimit:
+    price: float 
+    side: Side
+    qty: int
+    order_id: int
+
+
+@dataclass(frozen=True)
+class NewMarket: 
+    order_id: int
+    side: Side
+    qty: int
 
 
 @dataclass(frozen=True)
@@ -56,67 +59,101 @@ class Trade:
 
 class OrderBook:
     def __init__(self):
-        self.bids: List[Order] = []  # max-heap sorted by price, then time (requires Python 3.14+)
-        self.asks: List[Order] = []  # min-heap sorted by price, then time
+        self.bids: List[RestingOrder] = []  # max-heap sorted by price, then time (requires Python 3.14+)
+        self.asks: List[RestingOrder] = []  # min-heap sorted by price, then time
         self.active_orders: Set[int] = set()    # Tracks which orders are active. Used for lazy-cancellation of heap items
         self._trade_seq = itertools.count()
-        
-    def add_limit_order(self, order: Order) -> List[Trade]:
+        self._time_seq = itertools.count()
+
+    def _fill(self, *, aggressor_side: Side, aggressor_order_id: int, resting: RestingOrder, desired_qty: int) -> Tuple[int, Trade]:
+        """
+        Fill up to `desired_qty` against a single resting order.
+        Mutates `resting.qty`. Returns `(filled_qty, Trade)`.
+        """
+        filled = min(desired_qty, resting.qty)
+        resting.qty -= filled
+        trade = Trade(
+            price=resting.price,
+            seq=next(self._trade_seq),
+            aggressor_side=aggressor_side,
+            qty=filled,
+        )
+        return filled, trade
+    
+    def _rest(self, *, side: Side, price: float, qty: int, order_id: int) -> None:
+        t = next(self._time_seq)
+        heap_time = -t if side is Side.BUY else t # to preserve price-time priority in the max-heap
+        ro = RestingOrder(
+            price=price,
+            time=t,
+            heap_time=heap_time,
+            side=side,
+            qty=qty,
+            order_id=order_id,
+        )
+        if side is Side.BUY:
+            heapq.heappush_max(self.bids, ro)
+        else:
+            heapq.heappush(self.asks, ro)
+        self.active_orders.add(order_id)
+
+    def _process_limit_order(self, limit_order: NewLimit) -> List[Trade]:
         trades: List[Trade] = []
-        if order.side is Side.BUY:
+        order_qty = limit_order.qty
+        if limit_order.side is Side.BUY:
             while True:
                 best_ask = self._best_ask()
-                if (best_ask is None) or (order.price < best_ask.price) or (order.qty == 0):
+                if (best_ask is None) or (limit_order.price < best_ask.price) or (limit_order.qty == 0):
                     break
 
-                units_exchanged = min(order.qty, best_ask.qty)
-
-                order.qty -= units_exchanged
-                best_ask.qty -= units_exchanged
-                trades.append(
-                    Trade(
-                        price=best_ask.price, 
-                        seq=next(self._trade_seq),
-                        aggressor_side=order.side,
-                        qty=units_exchanged
-                    )
+                # Execute the trade at best market prices
+                filled, trade = self._fill(
+                    aggressor_side=limit_order.side,
+                    aggressor_order_id=limit_order.order_id,
+                    resting=best_ask,
+                    desired_qty=order_qty
                 )
-                # Ask is filled, remove it from the order book
+                order_qty -= filled
+                trades.append(trade)
+
+                # Ask is filled, remove from order book
                 if best_ask.qty == 0:
                     heapq.heappop(self.asks)
                     self.active_orders.discard(best_ask.order_id)
-
-            if order.qty > 0:
-                heapq.heappush_max(self.bids, order)
             
-        elif order.side is Side.SELL:
+        elif limit_order.side is Side.SELL:
             while True:
                 best_bid = self._best_bid()
-                if (best_bid is None) or (order.price > best_bid.price) or (order.qty == 0):
+                if (best_bid is None) or (limit_order.price > best_bid.price) or (limit_order.qty == 0):
                     break
 
-                units_exchanged = min(order.qty, best_bid.qty)
-
-                order.qty -= units_exchanged
-                best_bid.qty -= units_exchanged
-                trades.append(
-                    Trade(
-                        price=best_bid.price, 
-                        seq=next(self._trade_seq),
-                        aggressor_side=order.side,
-                        qty=units_exchanged
-                    )
+                # Execute the trade at best market prices
+                filled, trade = self._fill(
+                    aggressor_side=limit_order.side,
+                    aggressor_order_id=limit_order.order_id,
+                    resting=best_bid,
+                    desired_qty=order_qty
                 )
-                # Bid is filled, remove it from the order book
+                order_qty -= filled
+                trades.append(trade)
+
+                # Bid is filled, remove from order book
                 if best_bid.qty == 0:
                     heapq.heappop_max(self.bids)
                     self.active_orders.discard(best_bid.order_id)
 
-            if order.qty > 0:
-                heapq.heappush(self.asks, order)
         else:
             raise ValueError("Invalid side")
         
+        # If the order is partially filled, it rests
+        if order_qty > 0:
+            self._rest(
+                side=limit_order.side,
+                price=limit_order.price,
+                qty=order_qty,
+                order_id=limit_order.order_id
+            )
+
         return trades
 
     def _cancel_order(self, ev: Cancel) -> None:
