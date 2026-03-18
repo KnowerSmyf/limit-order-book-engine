@@ -1,6 +1,25 @@
+# Python
 __pycache__/
-jonk/
 *.pyc
-.env
+*.pyo
+*.pyd
+
+# Virtual env
+.venv/
+
+# Packaging
+*.egg-info/
+dist/
+build/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor / OS
 .vscode/
 .DS_Store
+
+# Idiosyncratic stuff
+jonk/
