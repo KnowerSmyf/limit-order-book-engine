@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import heapq
 import itertools
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Dict
 
 from models import RestingOrder, Side, Trade, NewLimit, Cancel, NewMarket, InboundEvent
 
@@ -323,3 +323,34 @@ class OrderBookPriceLevel:
             return []
         else:
             raise TypeError(f"Unknown event: {type(ev)!r}") 
+
+    def get_l2(self, depth: int | None = None) -> Dict[str, List[Tuple[float, int]]]:
+        """
+        Return a level-2 snapshot of the order book. 
+
+        Output format:
+        {
+            "bids": [(price, total_qty), ...]
+            "asks": [(price, total_qty), ...]
+        }
+
+        Prices are ordered best-to-worst on each side.
+        If `depth` is provided, truncate to that many levels per side.
+        """
+        bid_prices = sorted(self.bid_levels.keys(), reverse=True)
+        ask_prices = sorted(self.ask_levels.keys())
+
+        if depth is not None:
+            bid_prices = bid_prices[:depth]
+            ask_prices = ask_prices[:depth]
+
+        bids = [
+            (price, sum(order.qty for order in self.bid_levels[price].values()))
+            for price in bid_prices
+        ]
+        asks = [
+            (price, sum(order.qty for order in self.ask_levels[price].values()))
+            for price in ask_prices
+        ]
+
+        return {"bids": bids, "asks": asks}

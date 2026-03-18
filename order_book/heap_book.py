@@ -199,3 +199,35 @@ class OrderBook:
             return []
         else:
             raise TypeError(f"Unknown event: {type(ev)!r}") 
+
+    def get_l2(self, depth: int | None = None) -> dict[str, list[tuple[float, int]]]:
+        """
+        Return an L2 snapshot of the book as total quantity per price level.
+
+        Output format:
+            {
+                "bids": [(price, total_qty), ...],   # best to worst
+                "asks": [(price, total_qty), ...],   # best to worst
+            }
+
+        Only currently active resting orders are included.
+        """
+        bid_totals: dict[float, int] = {}
+        ask_totals: dict[float, int] = {}
+
+        for _, order in self.bids:
+            if order.order_id in self.active_orders and order.qty > 0:
+                bid_totals[order.price] = bid_totals.get(order.price, 0) + order.qty
+
+        for _, order in self.asks:
+            if order.order_id in self.active_orders and order.qty > 0:
+                ask_totals[order.price] = ask_totals.get(order.price, 0) + order.qty
+
+        bids = sorted(bid_totals.items(), key=lambda x: x[0], reverse=True)
+        asks = sorted(ask_totals.items(), key=lambda x: x[0])
+
+        if depth is not None:
+            bids = bids[:depth]
+            asks = asks[:depth]
+
+        return {"bids": bids, "asks": asks}
