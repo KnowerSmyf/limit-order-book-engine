@@ -2,7 +2,7 @@ import heapq
 import itertools
 from typing import List, Set, Tuple
 
-from models import RestingOrder, Side, Trade, NewLimit, Cancel, NewMarket, InboundEvent
+from .models import RestingOrder, Side, Trade, NewLimit, Cancel, NewMarket, InboundEvent
 
 class OrderBook:
     def __init__(self):
