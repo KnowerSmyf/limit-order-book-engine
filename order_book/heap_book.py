@@ -1,62 +1,8 @@
-from dataclasses import dataclass, field
 import heapq
 import itertools
-from typing import List, Set, Tuple, Union
-from enum import Enum
+from typing import List, Set, Tuple
 
-class Side(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-
-@dataclass
-class RestingOrder:
-    price: float 
-    time: int = field(compare=False)
-    side: Side = field(compare=False)
-    qty: int = field(compare=False)
-    order_id: int = field(compare=False)
-
-
-@dataclass(frozen=True)
-class NewLimit:
-    price: float 
-    side: Side
-    qty: int
-    order_id: int
-
-
-@dataclass(frozen=True)
-class NewMarket: 
-    order_id: int
-    side: Side
-    qty: int
-
-
-@dataclass(frozen=True)
-class Cancel:
-    order_id: int
-
-    
-InboundEvent = Union[NewLimit, NewMarket, Cancel]
-
-
-@dataclass(frozen=True)
-class Trade:
-    """
-    Represents an executed transaction between two counterparties.
-
-    Unlike an Order (which expresses unilateral intent to buy or sell),
-    a Trade is a bilateral event produced by the matching engine when
-    an incoming order interacts with resting liquidity.
-
-    Trades are immutable and represent historical fact.
-    """
-    price: float 
-    seq: int
-    aggressor_side: Side
-    qty: int
-
+from models import RestingOrder, Side, Trade, NewLimit, Cancel, NewMarket, InboundEvent
 
 class OrderBook:
     def __init__(self):
@@ -134,7 +80,7 @@ class OrderBook:
                 if (best_ask is None) or (limit_order.price < best_ask.price) or (order_qty == 0):
                     break
 
-                # Execute the trade at best market prices
+                # Execute against the best resting ask
                 filled, trade = self._fill(
                     aggressor_side=limit_order.side,
                     aggressor_order_id=limit_order.order_id,
@@ -155,7 +101,7 @@ class OrderBook:
                 if (best_bid is None) or (limit_order.price > best_bid.price) or (order_qty == 0):
                     break
 
-                # Execute the trade at best market prices
+                # Execute against the best resting bid
                 filled, trade = self._fill(
                     aggressor_side=limit_order.side,
                     aggressor_order_id=limit_order.order_id,
